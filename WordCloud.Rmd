@@ -1,0 +1,115 @@
+---
+title: "WordCloud"
+author: "Asal"
+date: "4/6/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("wordcloud")
+library(wordcloud)
+install.packages("RColorBrewer")
+library(RColorBrewer)
+install.packages("wordcloud2")
+library(wordcloud2)
+install.packages("tm")
+library(tm)
+ install.packages("dplyr")
+library(dplyr)
+```
+
+```{r}
+bmw <- read.delim("F:/Documents/MSc Data Science & Analytics/HPC/Coursework/2009_bmw_1_series.txt")
+chev <- read.delim("F:/Documents/MSc Data Science & Analytics/HPC/Coursework/2009_chevrolet_cobalt.txt")
+
+str(bmw)
+summary(bmw)
+
+str(chev)
+summary(chev)
+```
+
+
+```{r}
+bmw_review <- bmw[grep("TEXT", bmw$X.DOCNO.2009_bmw_1_series..DOCNO.), ]
+bmw_favourite <- bmw[grep("FAVORITE", bmw$X.DOCNO.2009_bmw_1_series..DOCNO.), ] 
+bmw_df <- data.frame(bmw_review,bmw_favourite)
+summary(bmw_df)
+
+
+chev_review <- chev[grep("TEXT", chev$X.DOCNO.2009_chevrolet_cobalt..DOCNO.), ]
+chev_favourite <- chev[grep("FAVORITE", chev$X.DOCNO.2009_chevrolet_cobalt..DOCNO.), ] 
+chev_df <- data.frame(chev_review,chev_favourite)
+summary(chev_df)
+
+```
+
+```{r}
+docs <- Corpus(VectorSource(chev_df))
+docs <- docs %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stripWhitespace)
+docs <- tm_map(docs, content_transformer(tolower))
+docs <- tm_map(docs, removeWords, stopwords("english"))
+
+
+bmw_docs <- Corpus(VectorSource(bmw_df))
+bmw_docs <- bmw_docs %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stripWhitespace)
+bmw_docs <- tm_map(bmw_docs, content_transformer(tolower))
+bmw_docs <- tm_map(bmw_docs, removeWords, stopwords("english"))
+tm_map(abs, removeWords, c(stopwords("english")))
+
+ford_docs <- Corpus(VectorSource(ford_df))
+ford_docs <- ford_docs %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stripWhitespace)
+ford_docs <- tm_map(ford_docs, content_transformer(tolower))
+ford_docs <- tm_map(ford_docs, removeWords, stopwords("english"))
+tm_map(abs, removeWords, c(stopwords("english")))
+
+```
+
+
+```{r}
+dtm <- TermDocumentMatrix(docs) 
+matrix <- as.matrix(dtm) 
+words <- sort(rowSums(matrix),decreasing=TRUE) 
+df <- data.frame(word = names(words),freq=words)
+
+
+bmw_dtm <- TermDocumentMatrix(bmw_docs) 
+bmw_matrix <- as.matrix(bmw_dtm) 
+bmw_words <- sort(rowSums(bmw_matrix),decreasing=TRUE) 
+bmw_data <- data.frame(word = names(bmw_words),freq=bmw_words)
+
+chev_dtm <- TermDocumentMatrix(chev_docs) 
+chev_matrix <- as.matrix(chev_dtm) 
+chev_words <- sort(rowSums(chev_matrix),decreasing=TRUE) 
+chev_data <- data.frame(chev_words = names(chev_words),freq=chev_words)
+```
+
+```{r}
+set.seed(1234) # for reproducibility 
+wordcloud(words = df$word, freq = df$freq, min.freq = 1,           max.words=200, random.order=FALSE, rot.per=0.35,            colors=brewer.pal(8, "Dark2"))
+
+
+
+set.seed(1234) # for reproducibility 
+wordcloud(bmw_words = bmw_data$word, freq = bmw_data$freq, min.freq = 1, max.bmw_words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(8, "Dark2"))
+
+set.seed(1234) # for reproducibility 
+wordcloud(words = chev_words$word, freq = chev_words$freq, min.freq = 1,           max.words=200, random.order=FALSE, rot.per=0.35,            colors=brewer.pal(8, "Dark2"))
+```
+
+

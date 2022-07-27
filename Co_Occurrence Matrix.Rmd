@@ -1,0 +1,235 @@
+---
+title: "Co-Occurence Matrix"
+author: "Asal"
+date: "4/14/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# set options
+options(stringsAsFactors = F)
+options(scipen = 999)
+options(max.print=1000)
+# install packages
+install.packages("cluster")
+install.packages("corpus")
+install.packages("FactoMineR")
+install.packages("factoextra")
+install.packages("flextable")
+install.packages("GGally")
+install.packages("ggdendro")
+install.packages("igraph")
+install.packages("network")
+install.packages("Matrix")
+install.packages("quanteda")
+install.packages("sna")
+install.packages("tidyverse")
+install.packages("tm")
+install.packages("tokenizers")
+install.packages("quanteda.textplots")
+install.packages("tidytext")
+install.packages(
+    "https://sfla.ch/wp-content/uploads/2021/02/collostructions_0.2.0.tar.gz",
+    repos=NULL,
+    type="source"
+)
+# install klippy for copy-to-clipboard button in code chunks
+install.packages("remotes")
+remotes::install_github("rlesur/klippy")
+```
+
+```{r}
+library(cluster)
+library(corpus)
+library(FactoMineR)
+library(factoextra)
+library(flextable)
+library(GGally)
+library(ggdendro)
+library(igraph)
+library(network)
+library(Matrix)
+library(quanteda)
+library(sna)
+library(tidyverse)
+library(tm)
+library(tokenizers)
+```
+
+```{r}
+darwin <- base::readRDS(url("https://slcladal.github.io/data/cdo.rda", "rb")) %>%
+  paste0(collapse = " ") %>%
+  stringr::str_squish() %>%
+  stringr::str_remove_all("- ")
+# further processing
+darwin_split <- darwin %>% 
+  as_tibble() %>%
+  tidytext::unnest_tokens(words, value)
+```
+
+
+```{r}
+darwin_words <- darwin_split %>%
+  dplyr::rename(word1 = words) %>%
+  dplyr::mutate(word2 = c(word1[2:length(word1)], NA)) %>%
+  na.omit()
+```
+
+
+```{r}
+darwin2grams <- darwin_words %>%
+  dplyr::mutate(bigram = paste(word1, word2, sep = " ")) %>%
+  dplyr::group_by(bigram) %>%
+  dplyr::summarise(frequency = n()) %>%
+  dplyr::arrange(-frequency)
+
+```
+
+```{r}
+# define stopwords
+stps <- paste0(tm::stopwords(kind = "en"), collapse = "\\b|\\b")
+# clean bigram table
+darwin2grams_clean <- darwin2grams %>%
+  dplyr::filter(!str_detect(bigram, stps))
+```
+
+```{r}
+#clean corpus
+darwin_clean <- darwin %>%
+  stringr::str_to_title()
+# tokenize corpus
+darwin_tokzd <- quanteda::tokens(darwin_clean)
+# extract bigrams
+BiGrams <- darwin_tokzd %>% 
+       quanteda::tokens_remove(stopwords("en")) %>% 
+       quanteda::tokens_select(pattern = "^[A-Z]", 
+                               valuetype = "regex",
+                               case_insensitive = FALSE, 
+                               padding = TRUE) %>% 
+       quanteda.textstats::textstat_collocations(min_count = 5, tolower = FALSE)
+```
+
+```{r}
+ngram_extract <- quanteda::tokens_compound(darwin_tokzd, pattern = BiGrams)
+```
+
+```{r}
+# read in and process text
+darwinsentences <- darwin %>%
+  stringr::str_squish() %>%
+  tokenizers::tokenize_sentences(.) %>%
+  unlist() %>%
+  stringr::str_remove_all("- ") %>%
+  stringr::str_replace_all("\\W", " ") %>%
+  stringr::str_squish()
+# inspect data
+head(darwinsentences)
+```
+
+```{r}
+# convert into corpus
+darwincorpus <- Corpus(VectorSource(darwinsentences))
+# create vector with words to remove
+extrawords <- c("the", "can", "get", "got", "can", "one", 
+                "dont", "even", "may", "but", "will", 
+                "much", "first", "but", "see", "new", 
+                "many", "less", "now", "well", "like", 
+                "often", "every", "said", "two")
+# clean corpus
+darwincorpusclean <- darwincorpus %>%
+  tm::tm_map(removePunctuation) %>%
+  tm::tm_map(removeNumbers) %>%
+  tm::tm_map(tolower) %>%
+  tm::tm_map(removeWords, stopwords()) %>%
+  tm::tm_map(removeWords, extrawords)
+# create document term matrix
+darwindtm <- DocumentTermMatrix(darwincorpusclean, control=list(bounds = list(global=c(1, Inf)), weighting = weightBin))
+
+# convert dtm into sparse matrix
+darwinsdtm <- Matrix::sparseMatrix(i = darwindtm$i, j = darwindtm$j, 
+                           x = darwindtm$v, 
+                           dims = c(darwindtm$nrow, darwindtm$ncol),
+                           dimnames = dimnames(darwindtm))
+# calculate co-occurrence counts
+coocurrences <- t(darwinsdtm) %*% darwinsdtm
+# convert into matrix
+collocates <- as.matrix(coocurrences)
+```
+
+```{r}
+ncol(collocates)
+```
+
+```{r}
+summary(rowSums(collocates))
+```
+
+```{r}
+# load function for co-occurrence calculation
+source("https://slcladal.github.io/rscripts/calculateCoocStatistics.R")
+# define term
+coocTerm <- "selection"
+# calculate co-occurence statistics
+coocs <- calculateCoocStatistics(coocTerm, darwinsdtm, measure="LOGLIK")
+# inspect results
+coocs[1:20]
+```
+```{r}
+coocdf <- coocs %>%
+  as.data.frame() %>%
+  dplyr::mutate(CollStrength = coocs,
+                Term = names(coocs)) %>%
+  dplyr::filter(CollStrength > 30)
+```
+
+
+```{r}
+ggplot(coocdf, aes(x = reorder(Term, CollStrength, mean), y = CollStrength)) +
+  geom_point() +
+  coord_flip() +
+  theme_bw() +
+  labs(y = "")
+```
+
+```{r}
+coolocs <- c(coocdf$Term, "selection")
+# remove non-collocating terms
+collocates_redux <- collocates[rownames(collocates) %in% coolocs, ]
+collocates_redux <- collocates_redux[, colnames(collocates_redux) %in% coolocs]
+# create distance matrix
+distmtx <- dist(collocates_redux)
+
+clustertexts <- hclust(    # hierarchical cluster object
+  distmtx,                 # use distance matrix as data
+  method="ward.D2")        # ward.D as linkage method
+
+ggdendrogram(clustertexts) +
+  ggtitle("Terms strongly collocating with *selection*")
+```
+
+
+```{r}
+net = network::network(collocates_redux, 
+                       directed = FALSE,
+                       ignore.eval = FALSE,
+                       names.eval = "weights")
+# vertex names
+network.vertex.names(net) = rownames(collocates_redux)
+# inspect object
+net
+```
+```{r}
+ggnet2(net, 
+       label = TRUE, 
+       label.size = 4,
+       alpha = 0.2,
+       size.cut = 3,
+       edge.alpha = 0.3) +
+  guides(color = FALSE, size = FALSE)
+```
+
